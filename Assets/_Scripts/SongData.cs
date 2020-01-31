@@ -7,12 +7,13 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Linq;
 using System.Collections.Immutable;
+using System.Threading.Tasks;
 
 public class SongData : MonoBehaviour
 {
-    List<Song> allSongs = new List<Song>();
+    string[] songPaths = new string[0];
 
-    public IEnumerable<Song> Songs { get { return allSongs; } }
+    public IEnumerable<Song> Songs { get; private set; } = new List<Song>();
 
     IEnumerable<PlayingMethod> ParsePlayingMethods(JSONArray difficultyBeatmapSets) {
         return
@@ -28,61 +29,75 @@ public class SongData : MonoBehaviour
                     });
     }
 
-    public List<Song> LoadSongs() {
-        var songs = new List<Song>();
+    public async Task<IEnumerable<Song>> LoadSongsAsync() {
+        async Task<Song> loadSong(string dir) {
+            if (Directory.Exists(dir) && Directory.GetFiles(dir, "info.dat").Length > 0) {
+                using (var fs = File.OpenRead(Path.Combine(dir, "info.dat"))) {
+                    var reader = new StreamReader(fs);
+                    var text = await reader.ReadToEndAsync();
 
-        string[] songPaths = new string[]
-        {
-#if UNITY_ANDROID
-            Path.Combine(Application.persistentDataPath, "Playlists"),
-            "/sdcard/Playlists",
-            "/sdcard/Download"
-#else
-            Path.Combine(Application.dataPath + "/Playlists")
-#endif
-        };
+                    JSONObject infoFile = JSONObject.Parse(text);
+                    var song = new Song(
+                        dir,
+                        infoFile.GetString("_songName"),
+                        infoFile.GetString("_songAuthorName"),
+                        infoFile.GetString("_levelAuthorName"),
+                        infoFile.GetNumber("_beatsPerMinute").ToString(),
+                        Path.Combine(dir, infoFile.GetString("_coverImageFilename")),
+                        Path.Combine(dir, infoFile.GetString("_songFilename")),
+                        ParsePlayingMethods(infoFile.GetArray("_difficultyBeatmapSets")));
 
-        // Process zip files first
-        foreach (var path in songPaths) {
-            if (Directory.Exists(path)) {
-                foreach (var f in Directory.GetFiles(path, "*.zip")) {
-                    var outputFolder = Path.Combine("/sdcard/Playlists", Path.GetFileNameWithoutExtension(f));
-                    if (!Directory.Exists(outputFolder))
-                        Directory.CreateDirectory(outputFolder);
-
-                    System.IO.Compression.ZipFile.ExtractToDirectory(f, outputFolder);
-                    File.Delete(f);
+                    return song;
                 }
-            }
+            } else
+                return null;
         }
 
-        foreach (var path in songPaths) {
-            if (Directory.Exists(path)) {
-                foreach (var dir in Directory.GetDirectories(path)) {
-                    if (Directory.Exists(dir) && Directory.GetFiles(dir, "info.dat").Length > 0) {
-                        JSONObject infoFile = JSONObject.Parse(File.ReadAllText(Path.Combine(dir, "info.dat")));
-                        var song = new Song(
-                            dir,
-                            infoFile.GetString("_songName"),
-                            infoFile.GetString("_songAuthorName"),
-                            infoFile.GetString("_levelAuthorName"),
-                            infoFile.GetNumber("_beatsPerMinute").ToString(),
-                            Path.Combine(dir, infoFile.GetString("_coverImageFilename")),
-                            Path.Combine(dir, infoFile.GetString("_songFilename")),
-                            ParsePlayingMethods(infoFile.GetArray("_difficultyBeatmapSets")));
+        async Task<IEnumerable<Song>> loadSongs(string[] paths) {
+            // Process zip files first
+            foreach (var path in paths) {
+                if (Directory.Exists(path)) {
+                    foreach (var f in Directory.GetFiles(path, "*.zip")) {
+                        var outputFolder = Path.Combine("/sdcard/Playlists", Path.GetFileNameWithoutExtension(f));
+                        if (!Directory.Exists(outputFolder))
+                            Directory.CreateDirectory(outputFolder);
 
-                        songs.Add(song);
+                        System.IO.Compression.ZipFile.ExtractToDirectory(f, outputFolder);
+                        File.Delete(f);
                     }
                 }
             }
+
+            var songTasks =
+                paths
+                    .Where(Directory.Exists)
+                    .SelectMany(Directory.GetDirectories)
+                    .Select(loadSong);
+            var songs = await Task.WhenAll(songTasks);
+            return songs.Where(x => x != null).OrderBy(song => song.Name);
         }
 
-        songs = songs.OrderBy(song => song.Name).ToList();
+        var songs = await loadSongs(this.songPaths);
         return songs;
     }
 
+    public IEnumerable<Song> LoadSongs() {
+        return Task.Run(LoadSongsAsync).Result;
+    }
+
     void Awake() {
-        allSongs = LoadSongs();
+        this.songPaths = new string[]
+            {
+    #if UNITY_ANDROID
+                Path.Combine(Application.persistentDataPath, "Playlists"),
+                "/sdcard/Playlists",
+                "/sdcard/Download"
+    #else
+                Path.Combine(Application.dataPath + "/Playlists")
+    #endif
+            };
+
+        Songs = LoadSongs();
     }
 }
 

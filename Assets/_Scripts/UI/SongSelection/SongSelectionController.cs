@@ -1,11 +1,12 @@
-﻿using System.Collections;
+﻿using System;
 using System.Collections.Generic;
-using UnityEngine;
-using UniRx;
-using System;
-using System.Linq;
-using System.IO;
 using System.Collections.Immutable;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
+using UniRx;
+using UnityEngine;
+using static Cmd;
 
 namespace UI.SongSelection
 {
@@ -162,7 +163,7 @@ namespace UI.SongSelection
     #endregion
 
     #region Intents
-    internal abstract class SongSelectionIntent {}
+    internal interface SongSelectionIntent { }
 
     internal sealed class InitialIntent : SongSelectionIntent { }
 
@@ -223,73 +224,20 @@ namespace UI.SongSelection
     }
     #endregion
 
-    #region IntentResults
-    abstract class IntentResult { }
-
-    sealed class SongsLoadingResult : IntentResult { }
-    sealed class SongsLoadedResult : IntentResult
-    {
-        public IEnumerable<Song> Songs;
-        public string PlayingMethod;
-        
-        public SongsLoadedResult(IEnumerable<Song> songs, string playingMethod = null) {
-            this.Songs = songs;
-            this.PlayingMethod = playingMethod;
-        }
-    }
-
-    sealed class FilterChangedResult : IntentResult
-    {
-        public string Filter { get; private set; }
-
-        public FilterChangedResult(string filter) {
-            this.Filter = filter;
-        }
-    }
-
-    sealed class SortChangedResult : IntentResult
-    {
-        public SortType SortType { get; private set; }
-
-        public SortChangedResult(SortType sortType) {
-            this.SortType = sortType;
-        }
-    }
-
-    sealed class DifficultyChangedResult : IntentResult
-    {
-        public string Difficulty { get; private set; }
-
-        public DifficultyChangedResult(string difficulty) {
-            this.Difficulty = difficulty;
-        }
-    }
-
-    sealed class CategoryChangedResult : IntentResult
-    {
-        public string Category { get; private set; }
-
-        public CategoryChangedResult(string category) {
-            this.Category = category;
-        }
-    }
-
-    sealed class SongSelectedResult : IntentResult
-    {
-        public SongItem Song { get; }
-
-        public SongSelectedResult(SongItem song) {
-            this.Song = song;
-        }
-    }
-
-    sealed class ClearSongSelectionResult : IntentResult { }
-
-    sealed class StopPreviewResult : IntentResult { }
-    #endregion
-
     internal sealed class SongSelectionController
     {
+
+        sealed class SongsLoadedIntent : SongSelectionIntent
+        {
+            public IEnumerable<Song> Songs;
+            public string PlayingMethod;
+
+            public SongsLoadedIntent(IEnumerable<Song> songs, string playingMethod = null) {
+                this.Songs = songs;
+                this.PlayingMethod = playingMethod;
+            }
+        }
+
         class SongComparer : IComparer<SongItem>
         {
             SortType sortType;
@@ -402,110 +350,85 @@ namespace UI.SongSelection
                     .ToList();
         }
 
-        IEnumerable<IntentResult> ProcessIntent(SongSelectionIntent intent) {
-            switch (intent)
-            {
-                case ChangeFilterIntent changeFilterIntent:
-                    yield return new StopPreviewResult();
-                    yield return new ClearSongSelectionResult();
-
-                    yield return new FilterChangedResult(changeFilterIntent.Text);
-                    break;
-                case ChangeSortIntent changeSortIntent:
-                    var sortType = SortType.SortTypes.FindAll(s => s.name == changeSortIntent.SortType);
-
-                    if (sortType.Count == 1) {
-                        yield return new StopPreviewResult();
-                        yield return new ClearSongSelectionResult();
-
-                        yield return new SortChangedResult(sortType.First());
-                    }
-                    break;
-                case ChangeDifficultyIntent changeDifficultyIntent:
-                    yield return new StopPreviewResult();
-
-                    yield return new DifficultyChangedResult(changeDifficultyIntent.Difficulty);
-                    break;
-                case ChangeCategoryIntent changeCategoryIntent:
-                    yield return new StopPreviewResult();
-                    yield return new ClearSongSelectionResult();
-
-                    yield return new CategoryChangedResult(changeCategoryIntent.Category);
-                    break;
-                case SelectSongIntent selectSongIntent:
-                    yield return new StopPreviewResult();
-                    yield return new SongSelectedResult(selectSongIntent.Song);
-                    break;
-                case ForceRefreshIntent _:
-                    yield return new StopPreviewResult();
-                    yield return new ClearSongSelectionResult();
-
-                    yield return new SongsLoadingResult();
-                    yield return new SongsLoadedResult(getAllSongs());
-                    break;
-                case InitialIntent _:
-                    yield return new SongsLoadingResult();
-                    yield return new SongsLoadedResult(getAllSongs(), PlayingMethods.PLAYING_METHOD_STANDARD);
-                    break;
-                case ChangePlayingMethod changeMethodIntent:
-                    yield return new StopPreviewResult();
-                    yield return new ClearSongSelectionResult();
-
-                    yield return new SongsLoadingResult();
-                    yield return new SongsLoadedResult(getAllSongs(), changeMethodIntent.PlayingMethodName);
-                    break;
+        (Model, ICmd<SongSelectionIntent>) Reduce(Model curModel, SongSelectionIntent result) {
+            SongSelectionIntent loadSongs(string method = null) {
+                var songs = getAllSongs();
+                return new SongsLoadedIntent(songs, method);
             }
-        }
 
-        Model Reduce(Model curModel, IntentResult result) {
-            Func<IEnumerable<SongItem>, ImmutableList<SongItem>> filterSongs =
-                (IEnumerable<SongItem> songs) =>
-                    FilterSongItems(songs, curModel.filter, curModel.difficulty, curModel.selectedSortType, curModel.selectedCategory, curModel.selectedPlayingMethod).ToImmutableList();
-            Func<Model, Model> filterModel =
-                (Model model) => {
-                    var songs = FilterSongItems(model.allSongs, model.filter, null, model.selectedSortType, model.selectedCategory, model.selectedPlayingMethod);
+            ImmutableList<SongItem> filterSongs(IEnumerable<SongItem> songs) {
+                return FilterSongItems(songs, curModel.filter, curModel.difficulty, curModel.selectedSortType, curModel.selectedCategory, curModel.selectedPlayingMethod).ToImmutableList();
+            }
 
-                    // Use the current difficulty if available in the filtered songs, or use the first one (ALL).
-                    var difficulties = new List<string>() { DIFFICULTY_FILTER_ALL };
-                    difficulties.AddRange(DifficultiesFromSongs(songs, model.selectedPlayingMethod));
-                    var selectedDifficulty = model.selectedDifficulty;
-                    if (string.IsNullOrWhiteSpace(model.selectedDifficulty) || !difficulties.Contains(model.selectedDifficulty))
-                        selectedDifficulty = difficulties.First();
+            Model filterModel(Model model) {
+                var songs = FilterSongItems(model.allSongs, model.filter, null, model.selectedSortType, model.selectedCategory, model.selectedPlayingMethod);
 
-                    return new Model(model) {
-                        songs = (selectedDifficulty == DIFFICULTY_FILTER_ALL? songs: songs.Where(s => s.difficulties.Contains(selectedDifficulty))).ToImmutableList(),
-                        difficulties = difficulties.ToImmutableList(),
-                        selectedDifficulty = selectedDifficulty
-                    };
+                // Use the current difficulty if available in the filtered songs, or use the first one (ALL).
+                var difficulties = new List<string>() { DIFFICULTY_FILTER_ALL };
+                difficulties.AddRange(DifficultiesFromSongs(songs, model.selectedPlayingMethod));
+                var selectedDifficulty = model.selectedDifficulty;
+                if (string.IsNullOrWhiteSpace(model.selectedDifficulty) || !difficulties.Contains(model.selectedDifficulty))
+                    selectedDifficulty = difficulties.First();
+
+                return new Model(model) {
+                    songs = (selectedDifficulty == DIFFICULTY_FILTER_ALL? songs: songs.Where(s => s.difficulties.Contains(selectedDifficulty))).ToImmutableList(),
+                    difficulties = difficulties.ToImmutableList(),
+                    selectedDifficulty = selectedDifficulty
                 };
+            }
             
-            // These states are only used to notify the view of changes, so they don't need to be cleared immediately to have any effect on the view.
-            Func<Model, Model> clearStates =
-                (Model model) => {
-                    return new Model(model) {
-                        previewState = SongPreviewState.NONE,
-                        songState = SongState.NONE,
-                        resetSongScrollPosition = false
-                    };
+            Model songsChanged(Model m) {
+                return new Model(m) {
+                    previewState = SongPreviewState.STOP,
+                    previewFilePath = null,
+                    selectedSong = null
                 };
-            curModel = clearStates(curModel);
+            }
 
-            if (result is FilterChangedResult filterChangedResult) {
-                return filterModel(
-                    new Model(curModel) {
-                        filter = filterChangedResult.Filter,
-                        resetSongScrollPosition = true
-                    });
-            } else if (result is SortChangedResult sortChangedResult) {
-                return filterModel(
-                    new Model(curModel) {
-                        selectedSortType = sortChangedResult.SortType,
-                        resetSongScrollPosition = true
-                    });
-            } else if (result is DifficultyChangedResult difficultyChangedResult) {
+            Model songsLoading(Model m) {
+                return new Model(m) {
+                    songState = SongState.LOADING,
+                    songs = ImmutableList<SongItem>.Empty,
+                    allSongs = ImmutableList<SongItem>.Empty,
+                    categories = ImmutableList<CategoryItem>.Empty,
+                    resetSongScrollPosition = true
+                };
+            }
+
+            // These states are only used to notify the view of changes, so they don't need to be cleared immediately to have any effect on the view.
+            curModel = new Model(curModel) {
+                previewState = SongPreviewState.NONE,
+                songState = SongState.NONE,
+                resetSongScrollPosition = false
+            };
+
+            if (result is ChangeFilterIntent filterChangeIntent) {
+                return (songsChanged(
+                    filterModel(
+                        new Model(curModel) {
+                            filter = filterChangeIntent.Text,
+                            resetSongScrollPosition = true
+                        })), Cmd.None<SongSelectionIntent>());
+            } else if (result is ChangeSortIntent sortChangeIntent) {
+                var sortTypes = SortType.SortTypes.FindAll(s => s.name == sortChangeIntent.SortType);
+
+                if (sortTypes.Count == 1) {
+                    var sortType = sortTypes.First();
+                    var m =
+                        songsChanged(
+                            filterModel(
+                                new Model(curModel) {
+                                    selectedSortType = sortType,
+                                    resetSongScrollPosition = true
+                                }));
+                    return (m, Cmd.None<SongSelectionIntent>());
+                } else {
+                    return (curModel, Cmd.None<SongSelectionIntent>());
+                }
+            } else if (result is ChangeDifficultyIntent changeDifficultyIntent) {
                 var model = filterModel(
-                    new Model(curModel) {
-                        selectedDifficulty = difficultyChangedResult.Difficulty,
+                    new Model(songsChanged(curModel)) {
+                        selectedDifficulty = changeDifficultyIntent.Difficulty,
                         songs = filterSongs(curModel.allSongs),
                         resetSongScrollPosition = true
                     });
@@ -517,27 +440,20 @@ namespace UI.SongSelection
                 }
 
                 return
-                    new Model(model) {
+                    (new Model(model) {
                         selectedSong = song
-                    };
-            } else if (result is CategoryChangedResult categoryChangedResult) {
+                    }, Cmd.None<SongSelectionIntent>());
+            } else if (result is ChangeCategoryIntent changeCategoryIntent) {
                 return
-                    filterModel(
-                        new Model(curModel) {
-                            selectedCategory = categoryChangedResult.Category,
-                            resetSongScrollPosition = true
-                        });
-            } else if (result is SongsLoadingResult) {
-                return new Model(curModel) {
-                    songState = SongState.LOADING,
-                    songs = ImmutableList<SongItem>.Empty,
-                    allSongs = ImmutableList<SongItem>.Empty,
-                    categories = ImmutableList<CategoryItem>.Empty,
-                    resetSongScrollPosition = true
-                };
-            } else if (result is SongsLoadedResult songsLoadedResult) {
-                var playingMethod = songsLoadedResult.PlayingMethod == null ? curModel.selectedPlayingMethod : songsLoadedResult.PlayingMethod;
-                var songs = ImmutableList<SongItem>.Empty.AddRange(ParseSongItems(songsLoadedResult.Songs, playingMethod));
+                    (songsChanged(
+                        filterModel(
+                            new Model(curModel) {
+                                selectedCategory = changeCategoryIntent.Category,
+                                resetSongScrollPosition = true
+                            })), Cmd.None<SongSelectionIntent>());
+            } else if (result is SongsLoadedIntent songsLoadedIntent) {
+                var playingMethod = songsLoadedIntent.PlayingMethod == null ? curModel.selectedPlayingMethod : songsLoadedIntent.PlayingMethod;
+                var songs = ImmutableList<SongItem>.Empty.AddRange(ParseSongItems(songsLoadedIntent.Songs, playingMethod));
 
                 // Get all the category assignments from the database
                 var userSongs = db.GetAll();
@@ -549,32 +465,32 @@ namespace UI.SongSelection
                 var categories = new List<CategoryItem>() { new CategoryItem(CATEGORY_ALL, (ushort) songs.Count) };
                 categories.AddRange(songCategories);
 
-                return filterModel(
-                    new Model(curModel) {
-                        songState = SongState.LOADED,
-                        allSongs = songs,
-                        categories = categories.ToImmutableList(),
-                        selectedCategory = CATEGORY_ALL,
-                        selectedPlayingMethod = playingMethod
-                    });
-            } else if (result is SongSelectedResult songSelectedResult) {
-                return new Model(curModel) {
+                var model =
+                    filterModel(
+                        new Model(curModel) {
+                            songState = SongState.LOADED,
+                            allSongs = songs,
+                            categories = categories.ToImmutableList(),
+                            selectedCategory = CATEGORY_ALL,
+                            selectedPlayingMethod = playingMethod
+                        });
+                return (model, Cmd.None<SongSelectionIntent>());
+            } else if (result is SelectSongIntent selectSongIntent) {
+                var model = new Model(songsChanged(curModel)) {
                     previewState = SongPreviewState.START,
-                    previewFilePath = songSelectedResult.Song.previewFilePath,
-                    selectedSong = songSelectedResult.Song,
-                    songDifficulties = ImmutableList<string>.Empty.AddRange(songSelectedResult.Song.difficulties)
+                    previewFilePath = selectSongIntent.Song.previewFilePath,
+                    selectedSong = selectSongIntent.Song,
+                    songDifficulties = ImmutableList<string>.Empty.AddRange(selectSongIntent.Song.difficulties)
                 };
-            } else if (result is StopPreviewResult) {
-                return new Model(curModel) {
-                    previewState = SongPreviewState.STOP,
-                    previewFilePath = null
-                };
-            } else if (result is ClearSongSelectionResult) {
-                return new Model(curModel) {
-                    selectedSong = null
-                };
+                return (model, Cmd.None<SongSelectionIntent>());
+            } else if (result is ForceRefreshIntent) {
+                return (songsLoading(curModel), Cmd.OfFunc(() => loadSongs()));
+            } else if (result is InitialIntent) {
+                return (songsLoading(curModel), Cmd.OfFunc(() => loadSongs(PlayingMethods.PLAYING_METHOD_STANDARD)));
+            } else if (result is ChangePlayingMethod changePlayingMethodIntent) {
+                return (songsLoading(curModel), Cmd.OfFunc(() => loadSongs(changePlayingMethodIntent.PlayingMethodName)));
             } else {
-                return curModel;
+                return (curModel, Cmd.None<SongSelectionIntent>());
             }
         }
 
@@ -583,9 +499,7 @@ namespace UI.SongSelection
             this.db = db;
 
             Render =
-                intentObservable
-                    .SelectMany(ProcessIntent)
-                    .Scan(Model.Initial(), Reduce);
+                CreateRenderLoop(intentObservable, (Model.Initial(), Cmd.None<SongSelectionIntent>()), Reduce);
         }
     }
 }

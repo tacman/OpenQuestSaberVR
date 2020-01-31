@@ -68,6 +68,8 @@ namespace UI.SongSelection
         Subject<ChangeCategoryIntent> changeCategorySubject = new Subject<ChangeCategoryIntent>();
         Subject<SelectSongIntent> selectSongSubject = new Subject<SelectSongIntent>();
 
+        List<IDisposable> disposables = new List<IDisposable>();
+
         void SelectSong(SongItem song) {
             selectSongSubject.OnNext(new SelectSongIntent(song));
         }
@@ -241,8 +243,8 @@ namespace UI.SongSelection
                     .Publish();
 
             controller = new SongSelectionController(merged, songData.LoadSongs, GetComponent<Database.UserSongDatabase>());
-            controller.Render.Subscribe(OnRender);
-            merged.Connect();
+            disposables.Add(controller.Render.Subscribe(OnRender));
+            disposables.Add(merged.Connect());
         }
 
         void FixedUpdate() {
@@ -253,6 +255,11 @@ namespace UI.SongSelection
                 audioSource.time = 40f;
                 audioSource.Play();
             }
+        }
+
+        private void OnDestroy() {
+            foreach (var disposable in disposables)
+                disposable.Dispose();
         }
 
         IEnumerator LoadMainMenu() {
