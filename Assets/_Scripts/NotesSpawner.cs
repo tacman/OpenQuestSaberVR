@@ -218,29 +218,27 @@ public class NotesSpawner : MonoBehaviour
 
     private void SetupObstacleData(Obstacle _obstacle)
     {
-        Vector3 _startZ = transform.forward * (BeatsConstants.BEAT_WARMUP_SPEED + BeatsConstants.BEAT_WARMUP_OFFSET * 0.5f);
-        Vector3 _midZ = _startZ - transform.forward * BeatsConstants.BEAT_WARMUP_SPEED;
-        Vector3 _endZ = _startZ - transform.forward * (BeatsConstants.BEAT_WARMUP_OFFSET + BeatsConstants.BEAT_WARMUP_SPEED);
-
-        Vector3 noteXStart = new Vector3(GetX(_obstacle.LineIndex), _obstacle.Type != ObstacleType.CEILING ? 0.1f : 1.3f, 0f);
-        _startZ += noteXStart;
-        _midZ += noteXStart;
-        _endZ += noteXStart;
+        float x = GetX(_song.TargetDifficulty.level._notes[_noteIndex]._lineIndex);
+        float y = GetY(_song.TargetDifficulty.level._notes[_noteIndex]._lineLayer);
+        float z = BeatsConstants.BEAT_WARMUP_SPEED + BeatsConstants.BEAT_WARMUP_OFFSET * 0.5f;
+                
+        Vector3 _startZ = new Vector3(x, y, z);
+        Vector3 _midZ = new Vector3(x, y, z - BeatsConstants.BEAT_WARMUP_SPEED);
+        Vector3 _endZ = new Vector3(x, y, z - (BeatsConstants.BEAT_WARMUP_OFFSET + BeatsConstants.BEAT_WARMUP_SPEED));
 
         GenerateObstacle(_obstacle, _startZ, _midZ, _endZ);
     }
 
     private void SetupNoteData(Note _note)
     {
-        Vector3 _startZ = transform.forward * (BeatsConstants.BEAT_WARMUP_SPEED + BeatsConstants.BEAT_WARMUP_OFFSET * 0.5f);
-        Vector3 _midZ = _startZ - transform.forward * BeatsConstants.BEAT_WARMUP_SPEED;
-        Vector3 _endZ = _startZ - transform.forward * (BeatsConstants.BEAT_WARMUP_OFFSET + BeatsConstants.BEAT_WARMUP_SPEED);
-
-        Vector3 noteXY = new Vector3(GetX(SetIndex(_note.LineIndex)), GetY(_note.LineLayer), 0);
-        //_startZ += noteXY;
-        _midZ += noteXY;
-        _endZ += noteXY;
-
+        float x = GetX(_song.TargetDifficulty.level._notes[_noteIndex]._lineIndex);
+        float y = GetY(_song.TargetDifficulty.level._notes[_noteIndex]._lineLayer);
+        float z = BeatsConstants.BEAT_WARMUP_SPEED + BeatsConstants.BEAT_WARMUP_OFFSET * 0.5f;
+                
+        Vector3 _startZ = new Vector3(x, y, z);
+        Vector3 _midZ = new Vector3(x, y, z - BeatsConstants.BEAT_WARMUP_SPEED);
+        Vector3 _endZ = new Vector3(x, y, z - (BeatsConstants.BEAT_WARMUP_OFFSET + BeatsConstants.BEAT_WARMUP_SPEED));
+                
         GenerateNote(_note, _startZ, _midZ, _endZ);
     }
 
@@ -326,64 +324,22 @@ public class NotesSpawner : MonoBehaviour
     }
     public float GetX(float noteindex)
     {
-        float num = (-1.5f + noteindex) * 0.6f; //-3f * 0.5f
+        float num = -1.5f;
 
         if (noteindex >= 1000 || noteindex <= -1000)
-        {
-            num = 0.3f;
-
+        { 
             if (noteindex <= -1000)
                 noteindex += 2000;
 
-            num = num + (noteindex * (0.6f / 1000));
+            num = (num + ((noteindex) * (0.6f / 1000)));
+        }
+        else
+        {
+            num = (num + noteindex) * 0.6f;
         }
 
         return num;
-    }
-    public float SetIndex(float lineIndex)
-    {
-        int newlaneCount = 0;
-        if (lineIndex > 3 || lineIndex < 0)
-        {
-            if (lineIndex >= 1000 || lineIndex <= -1000)
-            {
-                int newIndex = (int)lineIndex;
-                bool leftSide = false;
-                if (newIndex <= -1000)
-                {
-                    newIndex += 2000;
-                }
-
-                if (newIndex >= 4000)
-                    leftSide = true;
-
-
-                newIndex = 5000 - newIndex;
-                if (leftSide)
-                    newIndex -= 2000;
-
-                lineIndex = newIndex;
-            }
-
-            else if (lineIndex > 3)
-            {
-                int diff = (((int)lineIndex - 3) * 2);
-                newlaneCount = 4 + diff;
-                lineIndex = newlaneCount - diff - 1 - lineIndex;
-
-            }
-            else if (lineIndex < 0)
-            {
-                int diff = ((0 - (int)lineIndex)) * 2;
-                newlaneCount = 4 + diff;
-                lineIndex = newlaneCount - diff - 1 - lineIndex;
-            }
-
-            lineIndex = lineIndex < 0.6f * 3 ? Mathf.Abs(lineIndex) : -lineIndex;
-        }
-
-        return lineIndex;
-    }
+    }    
 
     public class Note
     {
