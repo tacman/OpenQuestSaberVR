@@ -218,8 +218,8 @@ public class NotesSpawner : MonoBehaviour
 
     private void SetupObstacleData(Obstacle _obstacle)
     {
-        float x = GetX(_song.TargetDifficulty.level._notes[_noteIndex]._lineIndex);
-        float y = GetY(_song.TargetDifficulty.level._notes[_noteIndex]._lineLayer);
+        float x = GetX(_obstacle.LineIndex);
+        float y = GetY(_obstacle.LineLayer);
         float z = BeatsConstants.BEAT_WARMUP_SPEED + BeatsConstants.BEAT_WARMUP_OFFSET * 0.5f;
                 
         Vector3 _startZ = new Vector3(x, y, z);
@@ -231,8 +231,8 @@ public class NotesSpawner : MonoBehaviour
 
     private void SetupNoteData(Note _note)
     {
-        float x = GetX(_song.TargetDifficulty.level._notes[_noteIndex]._lineIndex);
-        float y = GetY(_song.TargetDifficulty.level._notes[_noteIndex]._lineLayer);
+        float x = GetX(_note.LineIndex);
+        float y = GetY(_note.LineLayer);
         float z = BeatsConstants.BEAT_WARMUP_SPEED + BeatsConstants.BEAT_WARMUP_OFFSET * 0.5f;
                 
         Vector3 _startZ = new Vector3(x, y, z);
