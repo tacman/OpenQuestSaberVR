@@ -62,7 +62,7 @@ public class SongData : MonoBehaviour
                         if (!Directory.Exists(outputFolder))
                             Directory.CreateDirectory(outputFolder);
 
-                        System.IO.Compression.ZipFile.ExtractToDirectory(f, outputFolder);
+                        // System.IO.Compression.ZipFile.ExtractToDirectory(f, outputFolder);
                         File.Delete(f);
                     }
                 }
@@ -73,8 +73,8 @@ public class SongData : MonoBehaviour
                     .Where(Directory.Exists)
                     .SelectMany(Directory.GetDirectories)
                     .Select(loadSong);
-            var songs = await Task.WhenAll(songTasks);
-            return songs.Where(x => x != null).OrderBy(song => song.Name);
+            var songsX = await Task.WhenAll(songTasks);
+            return songsX.Where(x => x != null).OrderBy(song => song.Name);
         }
 
         var songs = await loadSongs(this.songPaths);

@@ -14,7 +14,7 @@ public class HighScoreBoard : MonoBehaviour
     private GameObject content;
 
     private void Awake() {
-        scoreSystem = GameObject.FindGameObjectWithTag("HighScore").GetComponent<HighScoreSystem>();
+            scoreSystem = GameObject.FindGameObjectWithTag("HighScore").GetComponent<HighScoreSystem>();
         content = transform.Find("Content").gameObject;
         content.SetActive(false);
     }
